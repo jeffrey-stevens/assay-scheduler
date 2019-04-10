@@ -1,0 +1,11 @@
+# R
+.Rhistory
+.RData
+
+# RStudio
+.Rproj.user
+
+# Packrat
+packrat/lib*/
+packrat/src/
+
