@@ -11,13 +11,14 @@ library(ompr.roi)
 
 # ----- Implementation -----
 
-# OMPR doesn't implement the concept of indexing sets.
+# ompr doesn't implement the concept of indexing sets.
 # This implements something close to it
 
 new_set <- function(keys) {
   # keys:  A character vector
   
-  set <- setNames(seq_along(keys), keys)
+  set <- structure( setNames(seq_along(keys), keys),
+                    class = "set", superset = NULL )
   
   return(set)
 }
@@ -35,9 +36,59 @@ get_keys <- function(set, varidx = set) {
   return(keys)
 }
 
+
 # Get a subset of a set, based on a subset of keys
 get_subset <- function(set, keys) {
-  set[keys]
+  
+  subset <- structure( set[keys], class = "set",
+                       superset = set )
+  
+  return(subset)
+}
+
+
+# Indexing should return a subset
+`[.set` <- function(x, i) {
+  
+  subset <- structure(NextMethod("["), class = "set", superset = x)
+  
+  return(subset)
+}
+
+
+# Get the next element of a set
+shift_set <- function(set, within = TRUE) {
+  # within:  Keep within the subset, or shift into the superset?
+  
+  if (within) {
+    # Create a vector of indices
+    idx <- seq_along(set)
+    
+    # Shift them forward by one, truncating the last element
+    shifted_idx <- (idx + 1)[-length(idx)]
+    
+    # Return the new values as a subset
+    shifted_set <- get_subset(set, get_keys(set)[shifted_idx])
+    
+  } else {
+    # Shifting out of the set is more involved...
+    superset <- attr(set, "superset")
+    N <- length(superset)
+    
+    idx <- match(set, superset)
+    shifted_idx <- idx + 1
+    n <- length(shifted_idx)
+    
+    # Drop the last index if it's out of range
+    if (shifted_idx[[n]] > N) {
+      shifted_idx <- shifted_idx[-n]
+    }
+    
+    # Return the new values as a subset of the superset
+    shifted_set <- get_subset(superset, get_keys(superset)[shifted_idx])
+  }
+  
+  return(shifted_set)
 }
 
 
@@ -200,17 +251,6 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
   # ----- Setup -----
   PLATES <- seq_len(num_plates)
   
-  DURATIONS <- new_param(PROCESSING_STEPS,
-                         c("AddBeads" = params$add_beads_dur,
-                           "WashBeads" = params$wash_dur,
-                           "AddSample" = params$add_sample_dur,
-                           "WashSample" = params$wash_dur,
-                           "AddPrimary" = params$add_primary_dur,
-                           "WashPrimary" = params$wash_dur,
-                           "AddSecondary" = params$add_secondary_dur,
-                           "WashSecondary" = params$wash_dur,
-                           "AddEnhancer" = params$add_enhancer_dur,
-                           "Read" = params$read_dur) )
   
   model <- MIPModel()
   
@@ -251,12 +291,49 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
 
   # ----- Constraints -----
 
-  ## Duration constraints
-  DURATIONS <- new_param(PROCESSING_STEPS)
+  ## Duration constraint
   
-
+  DURATIONS <- new_param(PROCESSING_STEPS,
+                         c("AddBeads" = params$add_beads_dur,
+                           "WashBeads" = params$wash_dur,
+                           "AddSample" = params$add_sample_dur,
+                           "WashSample" = params$wash_dur,
+                           "AddPrimary" = params$add_primary_dur,
+                           "WashPrimary" = params$wash_dur,
+                           "AddSecondary" = params$add_secondary_dur,
+                           "WashSecondary" = params$wash_dur,
+                           "AddEnhancer" = params$add_enhancer_dur,
+                           "Read" = params$read_dur) )
+  
+  model <-
+    model %>%
+    add_constraint( begin_time[plate, step] + DURATIONS[step] == end_time[plate, step],
+                    plate = PLATES, step = PROCESSING_STEPS )
 
   ## Step ordering constraints
+  
+  model <-
+    model %>%
+    ## Order the processing steps
+    add_constraint( end_time[plate, step1] <= begin_time[plate, step2],
+                    plate = PLATES,
+                    step1 = PROCESSING_STEPS[-length(PROCESSING_STEPS)],
+                    step2 = PROCESSING_STEPS[-1],
+                    # ompr removes all attributes, so "shift_set" won't
+                    # work...It's necessary to convert this back to a set in
+                    # order to make the comparison...
+                    step2 == shift_set(get_subset(PROCESSING_STEPS,
+                                                  get_keys(PROCESSING_STEPS, step1)),
+                                       within = FALSE) )
+    
+    # add_constraint( end_time[plate, step1] <= begin_time[plate, step2],
+    #                 plate = PLATES,
+    #                 step1 = 1:10,
+    #                 step2 = 2:11,
+    #                 step2 == step1 + 1 )
+
+  
+  ## Assay and run constraints
 
 
 
