@@ -15,10 +15,34 @@ library(ompr.roi)
 # This implements something close to it
 
 new_set <- function(keys) {
-  # keys:  A character vector
+  # keys:  A character vector, or a name-value character vector
   
-  set <- structure( setNames(seq_along(keys), keys),
-                    class = "set", superset = NULL )
+  # Todo:  Check for duplicate keys
+  
+  if (is.character(keys)) {
+    # 'keys' is a character vector; generate a sequence of index values
+    
+    values <- seq_along(keys)
+    set <- structure( setNames(seq_along(keys), keys),
+                      class = "set", superset = NULL )
+    # Setting an attribute to NULL has no effect (the attribute isn't stored),
+    # but it maintains consistency with the subset structure.  Unfortunately
+    # there doesn't appear to be a way of setting a NULL attribute...
+    
+  } else if (is.integer(keys)) {
+    # 'keys' may be a named vector...Check that all names are given
+    
+    key_names <- names(keys)
+    if ( !identical(length(key_names), length(keys)) ) {
+      stop("Some names missing from 'keys'.")
+    }
+    
+    set <- structure(keys, class = "set", superset = NULL)
+  } else {
+    
+    stop("'keys' must either be a character vector, or a named integer vector.")
+  }
+  
   
   return(set)
 }
@@ -38,7 +62,7 @@ get_keys <- function(set, varidx = set) {
 
 
 # Get a subset of a set, based on a subset of keys
-get_subset <- function(set, keys) {
+new_subset <- function(set, keys) {
   
   subset <- structure( set[keys], class = "set",
                        superset = set )
@@ -68,7 +92,7 @@ shift_set <- function(set, within = TRUE) {
     shifted_idx <- (idx + 1)[-length(idx)]
     
     # Return the new values as a subset
-    shifted_set <- get_subset(set, get_keys(set)[shifted_idx])
+    shifted_set <- new_subset(set, get_keys(set)[shifted_idx])
     
   } else {
     # Shifting out of the set is more involved...
@@ -85,10 +109,67 @@ shift_set <- function(set, within = TRUE) {
     }
     
     # Return the new values as a subset of the superset
-    shifted_set <- get_subset(superset, get_keys(superset)[shifted_idx])
+    shifted_set <- new_subset(superset, get_keys(superset)[shifted_idx])
   }
   
   return(shifted_set)
+}
+
+
+# Shift a vector (ompr strips attributes, unfortunately:
+shift_vec <- function(vec, set) {
+  
+  keys <- get_keys(set, vec)
+  subset <- new_subset(set, keys)
+  
+  shifted_subset <- shift_set(subset, within = FALSE)
+  
+  # Strip this of any structure for ompr
+  return( as.vector(shifted_subset) )
+  
+}
+
+
+# Map between two sets
+map_sets <- function(set1, set2, pairs) {
+  # pairs: Pairs of keys, as a named character vector
+  
+  # Check the inputs
+  
+  # set1 and set2 must both be sets
+  stopifnot( identical(class(set1), "set") && identical(class(set2), "set") )
+  
+  # 'pairs' must be a character vector of the same length as set1
+  stopifnot( is.character(pairs) && identical(length(pairs), length(set1)) )
+  
+  # The names of 'pairs' must match the keys of set1, with no missing names and
+  # no duplicates
+  stopifnot( identical(sort(names(pairs)), sort(get_keys(set1))) )
+  
+  # The values of 'pairs' are a subset of the keys of set2
+  stopifnot( all(pairs %in% get_keys(set2)) )
+  
+  # Todo:  Include error messages
+  
+  # Return a function for the association
+  map <- function(vals1) {
+    
+    # Check that vals is a subset of set1
+    stopifnot( all(vals1 %in% set1) )
+    
+    # First, get the keys of set1 associated with vals
+    keys1 <- get_keys(set1, vals1)
+    
+    # Now map the keys of set1 to the keys of set2
+    keys2 <- pairs[keys1]
+    
+    # Return the result as a vector
+    vals2 <- as.vector(set2[keys2])
+    
+    return(vals2)
+  }
+  
+  return(map)
 }
 
 
@@ -210,13 +291,13 @@ STEPS <- new_set(
 )
 
 
-WASH_STEPS <- get_subset(STEPS, c("WashBeads", "WashSample",
+WASH_STEPS <- new_subset(STEPS, c("WashBeads", "WashSample",
                                   "WashPrimary", "WashSecondary"))
 
-INCUBATION_STEPS <- get_subset(STEPS, c("IncubateSample", "IncubatePrimary",
+INCUBATION_STEPS <- new_subset(STEPS, c("IncubateSample", "IncubatePrimary",
                                       "IncubateSecondary"))
 
-PROCESSING_STEPS <- get_subset(STEPS, 
+PROCESSING_STEPS <- new_subset(STEPS, 
                                setdiff(get_keys(STEPS), get_keys(INCUBATION_STEPS)))
 
 
@@ -269,8 +350,10 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                  type = "continuous", lb = 0) %>%
     
     ## Incubation durations
-    add_variable(dur[plate, step],
-                 plate = PLATES, step = INCUBATE_STEPS,
+    ##
+    ## Keep the incubation times consistent between plates
+    add_variable(inc_dur[step],
+                 step = INCUBATE_STEPS,
                  type = "continuous", lb = 0) %>%
     
     ## Assay timings and durations
@@ -293,7 +376,7 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
 
   ## Duration constraint
   
-  DURATIONS <- new_param(PROCESSING_STEPS,
+  durations <- new_param(PROCESSING_STEPS,
                          c("AddBeads" = params$add_beads_dur,
                            "WashBeads" = params$wash_dur,
                            "AddSample" = params$add_sample_dur,
@@ -307,7 +390,7 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
   
   model <-
     model %>%
-    add_constraint( begin_time[plate, step] + DURATIONS[step] == end_time[plate, step],
+    add_constraint( begin_time[plate, step] + durations[step] == end_time[plate, step],
                     plate = PLATES, step = PROCESSING_STEPS )
 
   ## Step ordering constraints
@@ -319,18 +402,40 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                     plate = PLATES,
                     step1 = PROCESSING_STEPS[-length(PROCESSING_STEPS)],
                     step2 = PROCESSING_STEPS[-1],
-                    # ompr removes all attributes, so "shift_set" won't
-                    # work...It's necessary to convert this back to a set in
-                    # order to make the comparison...
-                    step2 == shift_set(get_subset(PROCESSING_STEPS,
-                                                  get_keys(PROCESSING_STEPS, step1)),
-                                       within = FALSE) )
-    
-    # add_constraint( end_time[plate, step1] <= begin_time[plate, step2],
-    #                 plate = PLATES,
-    #                 step1 = 1:10,
-    #                 step2 = 2:11,
-    #                 step2 == step1 + 1 )
+                    # ompr removes all attributes, so must use a vectorized version
+                    step2 == shift_vec(step1, PROCESSING_STEPS) )
+  
+  ## Incubation definition constraints
+  
+  ### Incubations need an equality constraint, since they're defined as the gap between
+  ### two processing steps...
+  
+  ### Creating set maps makes things easy to comprehend...
+  
+  ### Incubations start with the addition of reagent, and end with washing the plate
+  inc_start_map <- map_sets(INCUBATION_STEPS, PROCESSING_STEPS,
+                            c("IncubateSample" = "AddSample",
+                              "IncubatePrimary" = "AddPrimary",
+                              "IncubateSecondary" = "AddSecondary"))
+  inc_end_map <- map_sets(INCUBATION_STEPS, PROCESSING_STEPS,
+                          c("IncubateSample" = "WashSample",
+                            "IncubatePrimary" = "WashPrimary",
+                            "IncubateSecondary" = "WashSecondary"))
+  
+  model <-
+    model %>%
+    add_constraint( inc_dur[step] == begin_time[plate, step2] - end_time[plate, step1],
+                    plate = PLATES,
+                    step = INCUBATION_STEPS, step1 = PROCESSING_STEPS, step2 = PROCESSING_STEPS,
+                    step1 == inc_start_map(step), step2 == inc_end_map(step))
+  
+  ### For now, require that the incubations are the same for all plates
+  inc_dur_min <- new_param(INCUBATION_STEPS, c("IncubateSample" = params$sample_inc_min,
+                                               "IncubatePrimary" = params$primary_inc_min,
+                                               "IncubateSecondary" = params$secondary_inc_min))
+  inc_dur_max <- new_param(INCUBATION_STEPS, c("IncubateSample" = params$sample_inc_max,
+                                               "IncubatePrimary" = params$primary_inc_max,
+                                               "IncubateSecondary" = params$secondary_inc_max))
 
   
   ## Assay and run constraints
