@@ -93,8 +93,9 @@ get_keys <- function(set, vals = set) {
 # Get a subset of a set, based on a subset of keys
 new_subset <- function(set, keys) {
   
-  subset <- structure( set[keys], class = "set",
-                       superset = set )
+  stopifnot( identical(class(set), "set") )
+  
+  subset <- structure( set[keys], class = "set", superset = set )
   
   return(subset)
 }
@@ -103,7 +104,7 @@ new_subset <- function(set, keys) {
 # Indexing should return a subset
 `[.set` <- function(x, i) {
   
-  subset <- structure(NextMethod("["), superset = x)
+  subset <- structure(NextMethod(), class = "set", superset = x)
   
   return(subset)
 }
