@@ -18,6 +18,7 @@
 
 
 source("sets.R")
+source("solution.R")
 
 
 library(dplyr)
@@ -25,7 +26,7 @@ library(ROI)
 library(ROI.plugin.glpk)
 library(ompr)
 library(ompr.roi)
-
+library(dplyr)
 
 
 
@@ -57,7 +58,7 @@ INCUBATION_STEPS <- new_subset(STEPS, c("IncubateSample", "IncubatePrimary",
                                       "IncubateSecondary"))
 
 PROCESSING_STEPS <- new_subset(STEPS, 
-                               setdiff(get_keys(STEPS), get_keys(INCUBATION_STEPS)))
+                               setdiff(names(STEPS), names(INCUBATION_STEPS)))
 
 
 
@@ -290,10 +291,59 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
 }
 
 
-
 solve_schedule <- function(model) {
   
   solution <- solve_model(model, with_ROI(solver = "glpk"))
   
   return(solution)
+}
+
+
+repackage_solution <- function(model, solution, nplates = 1L) {
+  
+  PLATES <- seq_len(nplates)
+  
+  # Extract the solution
+  
+  ## Create the list of variables
+  vars_list <- vars( run_end = NULL,
+                     inc_dur = sets(Step = INCUBATION_STEPS),
+                     assay_begin = sets(Plate = PLATES),
+                     assay_end = sets(Plate = PLATES),
+                     assay_dur = sets(Plate = PLATES),
+                     begin_time = sets(Plate = PLATES, Step = STEPS),
+                     end_time = sets(Plate = PLATES, Step = STEPS) )
+  
+  sols <- extract_solution(model, solution, vars_list)
+  
+  # Repackage this to be more user-friendly
+  
+  ## Incubation durations
+  inc_dur <- rename(sols$inc_dur, Duration = value)
+  
+  ## Assay timings
+  assay_begin <- rename(sols$assay_begin, StartTime = value)
+  assay_end <- rename(sols$assay_end, EndTime = value)
+  assay_dur <- rename(sols$assay_dur, Duration = value)
+  
+  assay_times <-
+    inner_join(assay_begin, assay_end, by = "Plate") %>%
+    inner_join(assay_dur, by = "Plate") %>%
+    select(Plate, StartTime, EndTime, Duration) %>%
+    arrange(Plate)
+  
+  ## Step timings
+  step_begin <- rename(sols$begin_time, StartTime = value)
+  step_end <- rename(sols$end_time, EndTime = value)
+  
+  step_times <-
+    inner_join(step_begin, step_end, by = c("Plate", "Step")) %>%
+    mutate( Duration = EndTime - StartTime) %>%
+    select(Plate, Step, StartTime, EndTime, Duration) %>%
+    arrange(Plate, Step)
+  
+  return( list(RunDuration = unname(sols$run_end), 
+               IncubationDurations = inc_dur,
+               AssayTimes = assay_times,
+               StepTimes = step_times) )
 }

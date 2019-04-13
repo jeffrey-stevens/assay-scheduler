@@ -74,7 +74,7 @@ new_set <- function(keys) {
 
 
 # Get the keys corresponding to a vector of variable indices (columns)
-get_keys <- function(set, vals = set) {
+get_keys <- function(vals, set ) { 
   
   # Check that the indices in 'vals' are within 'set'
   stopifnot( all(vals %in% set) )
@@ -116,11 +116,11 @@ element_vector <- function(vals, set) {
   
   if ( is.numeric(vals)) {
     # Get the keys corresponding to these values
-    keys <- get_keys(set, vals)
+    keys <- get_keys(vals, set)
     
   } else if (is.character(vals)) {
     # Check that all the values are elements of the set
-    stopifnot( all(vals %in% get_keys(set)) )
+    stopifnot( all(vals %in% names(set)) )
     
     keys <- vals
   
@@ -159,7 +159,7 @@ shift_set <- function(set, within = TRUE) {
     shifted_idx <- (idx + 1)[-length(idx)]
     
     # Return the new values as a subset
-    shifted_set <- new_subset(set, get_keys(set)[shifted_idx])
+    shifted_set <- new_subset(set, names(set)[shifted_idx])
     
   } else {
     # Shifting out of the set is more involved...
@@ -176,7 +176,7 @@ shift_set <- function(set, within = TRUE) {
     }
     
     # Return the new values as a subset of the superset
-    shifted_set <- new_subset(superset, get_keys(superset)[shifted_idx])
+    shifted_set <- new_subset(superset, names(superset)[shifted_idx])
   }
   
   return(shifted_set)
@@ -186,7 +186,7 @@ shift_set <- function(set, within = TRUE) {
 # Shift a vector (ompr strips attributes, unfortunately:
 shift_vec <- function(vec, set) {
   
-  keys <- get_keys(set, vec)
+  keys <- get_keys(vec, set)
   subset <- new_subset(set, keys)
   
   shifted_subset <- shift_set(subset, within = FALSE)
@@ -211,10 +211,10 @@ map_sets <- function(set1, set2, pairs) {
   
   # The names of 'pairs' must match the keys of set1, with no missing names and
   # no duplicates
-  stopifnot( identical(sort(names(pairs)), sort(get_keys(set1))) )
+  stopifnot( identical(sort(names(pairs)), sort(names(set1))) )
   
   # The values of 'pairs' are a subset of the keys of set2
-  stopifnot( all(pairs %in% get_keys(set2)) )
+  stopifnot( all(pairs %in% names(set2)) )
   
   # Todo:  Include error messages
   
@@ -225,7 +225,7 @@ map_sets <- function(set1, set2, pairs) {
     stopifnot( all(vals1 %in% set1) )
     
     # First, get the keys of set1 associated with vals
-    keys1 <- get_keys(set1, vals1)
+    keys1 <- get_keys(vals1, set1)
     
     # Now map the keys of set1 to the keys of set2
     keys2 <- pairs[keys1]
@@ -251,16 +251,16 @@ new_param <- function(set, values) {
   
   if ( missing(values) || is.null(values) ) {
     # Create an empty vector of NAs (inefficient, but clean) 
-    v <- setNames( rep(NA_real_, length(set)), get_keys(set) )
+    v <- setNames( rep(NA_real_, length(set)), names(set) )
   
   } else if ( identical(length(names(values)), length(set)) ) {
     
-    if ( ! (all(names(values) %in% get_keys(set))) ) {
+    if ( ! (all(names(values) %in% names(set))) ) {
       stop("All names of 'values' must be in 'set'.")
     }
     
     # Rearrange this in "set" order
-    v <- values[get_keys(set)]
+    v <- values[names(set)]
     
     # Of course this gets messy if there are duplicate names...
   }
@@ -295,7 +295,7 @@ new_param <- function(set, values) {
 		set <- attr(x, "set")
 		
 		# Need to keep this as i for NextMethod...
-		i <- get_keys(set, i)
+		i <- get_keys(i, set)
 
 		value <- NextMethod()
 
@@ -324,7 +324,7 @@ new_param <- function(set, values) {
 		set <- attr(x, "set")
 		
 		# Need to keep this as i for NextMethod...
-		i <- get_keys(set, i)
+		i <- get_keys(i, set)
 
 		value <- NextMethod()
 
