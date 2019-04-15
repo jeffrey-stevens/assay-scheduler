@@ -14,7 +14,7 @@
 library(ggplot2)
 
 
-gantt_chart <- function(timings, by = "plate") {
+gantt_chart <- function(timings, by = "plate", title = "Assay schedule Gantt chart") {
   # timings:  Data frame with columns named "Plate", "Resource", "Start", and
   # "Stop".  "Resource" should be an ordered factor.
   #
@@ -38,6 +38,7 @@ gantt_chart <- function(timings, by = "plate") {
                         fill = Resource) ) +
         scale_y_continuous( breaks = breaks, labels = labels) +
         xlab("\nTime (minutes)") + ylab("Plate\n") +
+        ggtitle( paste0(title, "\nBroken out by plate", "\n") ) +
         theme_bw()
     
   } else if ( identical(by, "resource") ) {
@@ -52,6 +53,7 @@ gantt_chart <- function(timings, by = "plate") {
                         fill = Plate) ) +
         scale_y_continuous( breaks = breaks, labels = labels) +
         xlab("\nTime (minutes)") + ylab("Resource\n") +
+        ggtitle( paste0(title, "\nBroken out by resource", "\n") ) +
         theme_bw()
     
   } else {

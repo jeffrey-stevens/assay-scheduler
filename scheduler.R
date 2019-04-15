@@ -33,6 +33,14 @@ library(dplyr)
 # Constants and globals ---------------------------------------------------
 
 
+# ----- Resources -----
+
+# Define the physical resources used by the system
+RESOURCES <- new_set( c( "Pipettor", "Washer", "Reader") )
+
+
+# ----- Steps -----
+
 STEPS <- new_set( 
   c(  "AddBeads",
       "WashBeads",
@@ -50,7 +58,6 @@ STEPS <- new_set(
   )
 )
 
-
 WASH_STEPS <- new_subset(STEPS, c("WashBeads", "WashSample",
                                   "WashPrimary", "WashSecondary"))
 
@@ -61,11 +68,29 @@ PROCESSING_STEPS <- new_subset(STEPS,
                                setdiff(names(STEPS), names(INCUBATION_STEPS)))
 
 
+# ----- Maps -----
+
+# Map resources 
+resources_map <- map_sets( PROCESSING_STEPS, RESOURCES, 
+  c(  "AddBeads"          = "Pipettor",
+      "WashBeads"         = "Washer",
+      "AddSample"         = "Pipettor",
+      "WashSample"        = "Washer",
+      "AddPrimary"        = "Pipettor",
+      "WashPrimary"       = "Washer",
+      "AddSecondary"      = "Pipettor",
+      "WashSecondary"     = "Washer",
+      "AddEnhancer"       = "Pipettor",
+      "Read"              = "Reader"
+  )
+)
+
 
 # ----- Defaults -----
 
 # Timings are in *seconds*
 
+# The default list of parameters for build_model
 DEFAULTS <- list(
   ## Time to mix the bead suspension, and transfer it into a full plate
   add_beads_dur = 120,
@@ -138,7 +163,7 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
     ##
     ## Keep the incubation times consistent between plates
     add_variable(inc_dur[step],
-                 step = INCUBATE_STEPS,
+                 step = INCUBATION_STEPS,
                  type = "continuous", lb = 0) %>%
     
     ## Assay timings and durations
@@ -223,8 +248,6 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                             "IncubatePrimary" = "WashPrimary",
                             "IncubateSecondary" = "WashSecondary"))
   
-  # browser()
-  
   model <-
     model %>%
     add_constraint( begin_time[plate, inc_step] == end_time[plate, proc_step],
@@ -237,7 +260,7 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
 
     add_constraint( inc_dur[step] == end_time[plate, step] - begin_time[plate, step],
                     ## All incubations are assumed to be the same (for now)
-                    plate = PLATES[1], step = INCUBATION_STEPS )
+                    plate = PLATES, step = INCUBATION_STEPS )
   
   
   # ----- Incubation bounds constraints -----
@@ -256,9 +279,69 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                     step = INCUBATION_STEPS) %>%
     add_constraint( inc_dur[step] <= inc_dur_max[step],
                     step = INCUBATION_STEPS)
-  
+
+
+  # ----- Resource conflict constraints -----
+
+  # Assume that each physical resource (whether the pipettor/liquid handler,
+  # washer or reader) can only process one plate at a time.
+
+
+  # No conflicts are possible with only 1 plate...
+  if (num_plates > 1L) {
+    
+    # Big M factor for enforcing the OR constraints
+    bigM <- 1e6
+    
+    model <-
+      model %>%
+      
+      ## Create the binary variables needed to enforce the OR constraint.
+      add_variable( resOR[plate1, step1, plate2, step2],
+                    plate1 = PLATES, step1 = PROCESSING_STEPS,
+                    plate2 = PLATES, step2 = PROCESSING_STEPS,
+                    # There's symmetry to the non-conflict constraints. This
+                    # prevents the same constraints from being defined twice, and
+                    # prevents a plate from being compared against itself:
+                    plate1 < plate2,
+                    # There's only a potential for conflict if the resources are
+                    # the same (non-conflicting instruments should be able to
+                    # run in parallel):
+                    resources_map(step1) == resources_map(step2),
+                    type = "binary" ) %>%
+    
+      # There's no resource conflict if the steps utilizing that resource don't
+      # overlap in time. That is, there's no conflict if one step ends before the
+      # other begins, OR if one begins after the other ends.
+      #
+      # The Big M notation ensures that if one constraint is violated, then the
+      # other constrant MUST hold:
+      add_constraint( end_time[plate1, step1] <= begin_time[plate2, step2] +
+                        bigM * resOR[plate1, step1, plate2, step2],
+                      plate1 = PLATES, step1 = PROCESSING_STEPS,
+                      plate2 = PLATES, step2 = PROCESSING_STEPS,
+                      plate1 < plate2,
+                      resources_map(step1) == resources_map(step2)
+                    ) %>%
+
+      add_constraint( end_time[plate2, step2] <= begin_time[plate1, step1] +
+                        bigM * (1 - resOR[plate1, step1, plate2, step2]),
+                      plate1 = PLATES, step1 = PROCESSING_STEPS,
+                      plate2 = PLATES, step2 = PROCESSING_STEPS,
+                      plate1 < plate2,
+                      resources_map(step1) == resources_map(step2)
+                    )
+  }
+    
   
   # ----- Assay and run definitions -----
+  
+  # Order the assays by plate number:
+  model <-
+    model %>%
+    add_constraint( assay_begin[plate1] <= assay_begin[plate2],
+                    plate1 = PLATES, plate2 = PLATES,
+                    plate1 < plate2 )
   
   # An assay begins with the beginning of bead suspension transfer step, and
   # ends with the end of the read (note that plate transport steps are being
@@ -273,12 +356,12 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
     add_constraint( assay_dur[plate] == assay_end[plate] - assay_begin[plate],
                     plate = PLATES)
   
-  # A run ends with the end of the last assay
+  # A run ends when all the assays have completed
   
   model <-
     model %>%
-    add_constraint( run_end == assay_end[plate],
-                   plate = PLATES[length(PLATES)] )
+    add_constraint( assay_end[plate] <= run_end,
+                   plate = PLATES )
 
 
   # ===== Objective =====

@@ -219,21 +219,45 @@ map_sets <- function(set1, set2, pairs) {
   # Todo:  Include error messages
   
   # Return a function for the association
-  map <- function(vals1) {
+  map <- function(vals) {
     
-    # Check that vals is a subset of set1
-    stopifnot( all(vals1 %in% set1) )
+    # vals could be an integer vector or a vector of keys
+    if ( is.integer(vals) ) {
+      
+      # Check that vals is a subset of set1
+      stopifnot( all(vals %in% set1) )
+      
+      # First, get the keys of set1 associated with vals
+      keys_in <- get_keys(vals, set1)
+      
+      # Now map the keys of set1 to the keys of set2
+      keys_out <- pairs[keys_in]
+      
+      # Return the result as an integer vector
+      vals_out <- as.vector(set2[keys_out])
+      return(vals_out)
+      
+    } else if ( is.character(vals) ) {
+      
+      # Check that vals is a subset of the keys of set1
+      stopifnot( all(vals %in% names(set1)))
+      
+      # The keys are already given
+      keys_in <- vals
+      
+      # Now map the keys of set1 to the keys of set2
+      keys_out <- pairs[keys_in]
+      
+      # Return a list of output keys instead.
+      # It probably isn't good practice to have the type of the output change
+      # according to the type of input, but it shouldn't cause much problem in
+      # this application...
+      return(keys_out)
+      
+    } else {
+      stop("vals must be an integer or character vector.")
+    }
     
-    # First, get the keys of set1 associated with vals
-    keys1 <- get_keys(vals1, set1)
-    
-    # Now map the keys of set1 to the keys of set2
-    keys2 <- pairs[keys1]
-    
-    # Return the result as a vector
-    vals2 <- as.vector(set2[keys2])
-    
-    return(vals2)
   }
   
   return(map)
