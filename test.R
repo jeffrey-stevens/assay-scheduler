@@ -22,24 +22,29 @@ test_model <- function(nplates = 1L) {
              "WashSecondary",
              "AddEnhancer",
              "Read"),
-    Resource = c("Pipettor",
-                 "Washer",
-                 "Pipettor",
-                 "Incubate",
-                 "Washer",
-                 "Pipettor",
-                 "Incubate",
-                 "Washer",
-                 "Pipettor",
-                 "Incubate",
-                 "Washer",
-                 "Pipettor",
-                 "Reader"),
+    Resource = factor(
+      c("Pipettor",
+        "Washer",
+        "Pipettor",
+        "Incubation",
+        "Washer",
+        "Pipettor",
+        "Incubation",
+        "Washer",
+        "Pipettor",
+        "Incubation",
+        "Washer",
+        "Pipettor",
+        "Reader"),
+      levels = c("Pipettor", "Washer", "Reader", "Incubation")),
     stringsAsFactors = FALSE
   )
   
   timings <- 
     sol$StepTimes %>%
+    # Convert "Step" to a character vector, to keep ggplot2 from complaining,
+    # and to ensure that the join aligns properly:
+    mutate(Step = as.character(Step)) %>%
     rename(Start = StartTime, Stop = EndTime) %>%
     inner_join(resources, by = "Step")
   
