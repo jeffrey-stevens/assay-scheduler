@@ -36,7 +36,7 @@ gantt_chart <- function(timings, by = "plate", title = "Assay schedule Gantt cha
         geom_rect( aes( xmin = Start, xmax = Stop,
                         ymin = Plate - 0.5, ymax = Plate + 0.5,
                         fill = Resource), color = "black" ) +
-        scale_y_continuous( breaks = breaks, labels = labels) +
+        scale_y_continuous( breaks = breaks, labels = labels, trans = "reverse") +
         xlab("\nTime (minutes)") + ylab("Plate\n") +
         ggtitle( paste0(title, "\nBroken out by plate", "\n") ) +
         theme_bw()
