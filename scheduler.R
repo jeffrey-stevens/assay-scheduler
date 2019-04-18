@@ -58,14 +58,16 @@ STEPS <- new_set(
   )
 )
 
-WASH_STEPS <- new_subset(STEPS, c("WashBeads", "WashSample",
-                                  "WashPrimary", "WashSecondary"))
+WASH_STEPS <- new_subset(c("WashBeads", "WashSample",
+                           "WashPrimary", "WashSecondary"),
+                         STEPS)
 
-INCUBATION_STEPS <- new_subset(STEPS, c("IncubateSample", "IncubatePrimary",
-                                      "IncubateSecondary"))
+INCUBATION_STEPS <- new_subset(c("IncubateSample", "IncubatePrimary",
+                                 "IncubateSecondary"),
+                               STEPS)
 
-PROCESSING_STEPS <- new_subset(STEPS, 
-                               setdiff(names(STEPS), names(INCUBATION_STEPS)))
+PROCESSING_STEPS <- new_subset( setdiff(names(STEPS), names(INCUBATION_STEPS)),
+                                STEPS)
 
 
 # ----- Maps -----
@@ -186,8 +188,7 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
   
   # ----- Duration constraint ----- 
   
-  durations <- new_param(PROCESSING_STEPS,
-                         c("AddBeads" = params$add_beads_dur,
+  durations <- new_param( c("AddBeads" = params$add_beads_dur,
                            "WashBeads" = params$wash_dur,
                            "AddSample" = params$add_sample_dur,
                            "WashSample" = params$wash_dur,
@@ -196,7 +197,8 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                            "AddSecondary" = params$add_secondary_dur,
                            "WashSecondary" = params$wash_dur,
                            "AddEnhancer" = params$add_enhancer_dur,
-                           "Read" = params$read_dur) )
+                           "Read" = params$read_dur),
+                          PROCESSING_STEPS )
   
   model <-
     model %>%
@@ -207,8 +209,30 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
   # ----- Step ordering constraints -----
   
   # Explicitly map the sequence of steps
-  next_step <- map_sets(PROCESSING_STEPS[-length(PROCESSING_STEPS)],
-                        PROCESSING_STEPS[-1],
+  
+  prior_steps <- new_subset( c( "AddBeads",
+                                "WashBeads",
+                                "AddSample",
+                                "WashSample",
+                                "AddPrimary",
+                                "WashPrimary",
+                                "AddSecondary",
+                                "WashSecondary",
+                                "AddEnhancer"),
+                             PROCESSING_STEPS )
+  post_steps <- new_subset( c(  "WashBeads",
+                                "AddSample",
+                                "WashSample",
+                                "AddPrimary",
+                                "WashPrimary",
+                                "AddSecondary",
+                                "WashSecondary",
+                                "AddEnhancer",
+                                "Read"),
+                            PROCESSING_STEPS )
+  
+  next_step <- map_sets(prior_steps,
+                        post_steps,
                         c( "AddBeads" = "WashBeads",
                            "WashBeads" = "AddSample",
                            "AddSample" = "WashSample",
@@ -266,12 +290,14 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
   # ----- Incubation bounds constraints -----
   
   # For now, require that the incubations are the same for all plates
-  inc_dur_min <- new_param(INCUBATION_STEPS, c("IncubateSample" = params$sample_inc_min,
-                                               "IncubatePrimary" = params$primary_inc_min,
-                                               "IncubateSecondary" = params$secondary_inc_min))
-  inc_dur_max <- new_param(INCUBATION_STEPS, c("IncubateSample" = params$sample_inc_max,
-                                               "IncubatePrimary" = params$primary_inc_max,
-                                               "IncubateSecondary" = params$secondary_inc_max))
+  inc_dur_min <- new_param( c("IncubateSample" = params$sample_inc_min,
+                              "IncubatePrimary" = params$primary_inc_min,
+                              "IncubateSecondary" = params$secondary_inc_min),
+                            INCUBATION_STEPS )
+  inc_dur_max <- new_param( c("IncubateSample" = params$sample_inc_max,
+                              "IncubatePrimary" = params$primary_inc_max,
+                              "IncubateSecondary" = params$secondary_inc_max),
+                            INCUBATION_STEPS )
 
   model <-
     model %>%

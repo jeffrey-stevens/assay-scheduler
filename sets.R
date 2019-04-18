@@ -73,25 +73,8 @@ new_set <- function(keys) {
 }
 
 
-# Get the keys corresponding to a vector of variable indices (columns)
-get_keys <- function(vals, set ) { 
-  
-  # Check that the indices in 'vals' are within 'set'
-  stopifnot( all(vals %in% set) )
-  
-  # Get the indices of the set items in vals 
-  idx <- match(vals, set)
-  # Note that there shouldn't be any NAs in here...
-  
-  # The keys are the names of the corresponding subset
-  keys <- names(set[idx])
-  
-  return(keys)
-}
-
-
 # Get a subset of a set, based on a subset of keys
-new_subset <- function(set, keys) {
+new_subset <- function(keys, set) {
   
   stopifnot( identical(class(set), "set") )
   
@@ -101,103 +84,52 @@ new_subset <- function(set, keys) {
 }
 
 
-# Indexing should return a subset
-`[.set` <- function(x, i) {
-  
-  subset <- structure(NextMethod(), class = "set", superset = x)
-  
-  return(subset)
-}
+
+# Element vectors ---------------------------------------------------------
 
 
 # Create a vector of elements (order matters; replicates are permitted)
-element_vector <- function(vals, set) {
+elements <- function(vals, set) {
   # vals:  A list of keys, or a list of indices
   
   if ( is.numeric(vals)) {
-    # Get the keys corresponding to these values
-    keys <- get_keys(vals, set)
+    # Check that all values are in the set
+    stopifnot( all(vals %in% set) )
+    
+    # Match these values to the elements of the set
+    idx <- match(vals, set)
+    vec <- set[idx]
     
   } else if (is.character(vals)) {
     # Check that all the values are elements of the set
     stopifnot( all(vals %in% names(set)) )
     
-    keys <- vals
+    vec <- set[vals]
   
   } else {
     stop("'vals' must be an integer or character vector.")
   }
   
-  # Get the elements, clearing the attributes (except for "names")
-  vec <- unclass(set[keys])
-  attr(vec, "superset") <- NULL
-  
-  obj <- structure(vec, class = "element_vec", set = set)
+  obj <- structure(vec, class = "elements", set = set)
   
   return(obj)
 }
 
 
 # Unfortunately [] drops attributes...
-`[.element_vec` <- function(x, i) {
+`[.elements` <- function(x, i) {
   
-  obj <- structure(NextMethod(), class = "element_vec", set = attr(x, "set"))
+  obj <- structure(NextMethod(), class = "elements", set = attr(x, "set"))
   
   return(obj)
 }
 
 
-# Get the next element of a set
-shift_set <- function(set, within = TRUE) {
-  # within:  Keep within the subset, or shift into the superset?
-  
-  if (within) {
-    # Create a vector of indices
-    idx <- seq_along(set)
-    
-    # Shift them forward by one, truncating the last element
-    shifted_idx <- (idx + 1)[-length(idx)]
-    
-    # Return the new values as a subset
-    shifted_set <- new_subset(set, names(set)[shifted_idx])
-    
-  } else {
-    # Shifting out of the set is more involved...
-    superset <- attr(set, "superset")
-    N <- length(superset)
-    
-    idx <- match(set, superset)
-    shifted_idx <- idx + 1
-    n <- length(shifted_idx)
-    
-    # Drop the last index if it's out of range
-    if (shifted_idx[[n]] > N) {
-      shifted_idx <- shifted_idx[-n]
-    }
-    
-    # Return the new values as a subset of the superset
-    shifted_set <- new_subset(superset, names(superset)[shifted_idx])
-  }
-  
-  return(shifted_set)
-}
 
-
-# Shift a vector (ompr strips attributes, unfortunately:
-shift_vec <- function(vec, set) {
-  
-  keys <- get_keys(vec, set)
-  subset <- new_subset(set, keys)
-  
-  shifted_subset <- shift_set(subset, within = FALSE)
-  
-  # Strip this of any structure for ompr
-  return( as.vector(shifted_subset) )
-  
-}
-
-
-# Map between two sets
+# Map elements vectors from one set to another
+#
+# This defines the set mapping; it returns a function for mapping an elements
+# vector on one set to the associated elements vector on the other set.
 map_sets <- function(set1, set2, pairs) {
   # pairs: Pairs of keys, as a named character vector
   
@@ -221,77 +153,47 @@ map_sets <- function(set1, set2, pairs) {
   # Return a function for the association
   map <- function(vals) {
     
-    # vals could be an integer vector or a vector of keys
-    if ( is.integer(vals) ) {
-      
-      # Check that vals is a subset of set1
-      stopifnot( all(vals %in% set1) )
-      
-      # First, get the keys of set1 associated with vals
-      keys_in <- get_keys(vals, set1)
-      
-      # Now map the keys of set1 to the keys of set2
-      keys_out <- pairs[keys_in]
-      
-      # Return the result as an integer vector
-      vals_out <- as.vector(set2[keys_out])
-      return(vals_out)
-      
-    } else if ( is.character(vals) ) {
-      
-      # Check that vals is a subset of the keys of set1
-      stopifnot( all(vals %in% names(set1)))
-      
-      # The keys are already given
-      keys_in <- vals
-      
-      # Now map the keys of set1 to the keys of set2
-      keys_out <- pairs[keys_in]
-      
-      # Return a list of output keys instead.
-      # It probably isn't good practice to have the type of the output change
-      # according to the type of input, but it shouldn't cause much problem in
-      # this application...
-      return(keys_out)
-      
-    } else {
-      stop("vals must be an integer or character vector.")
-    }
+    # Coerce vals to an elements object, for simplicity
+    keys_in <- names(elements(vals, set1))
     
+    # Now map the keys of set1 to the keys of set2
+    keys_out <- pairs[keys_in]
+    
+    # Save this as an elements vector, for simplicity
+    keys_out <- elements(keys_out, set2)
+    
+    return(keys_out)
   }
   
   return(map)
 }
 
 
-# Parameters are more difficult to implement since they may be defined over
-# subsets, yet ompr prefers to index by position...
 
-new_param <- function(set, values) {
+
+# Parameters --------------------------------------------------------------
+#
+# Parameters in AMPL are basically lists of name-value pairs over AMPL sets.
+# This is a simple implementation of this concept.
+#
+# Parameters can't be defined by name-value pairs like R vectors, since they
+# ompr indexes by value, rather than by name...This makes the implementation
+# more complex than with the "sets" defined above:
+
+new_param <- function(keyvals, set) {
   
-  # "values" can be missing, NULL, or a vector of key-value pairs,
-  # where the keys are among the keys of the set.  Set any missing
-  # values to NA.
+  # "keyvals" is a numeric vector of name-value pairs.
   
-  if ( missing(values) || is.null(values) ) {
-    # Create an empty vector of NAs (inefficient, but clean) 
-    v <- setNames( rep(NA_real_, length(set)), names(set) )
+  stopifnot( is.numeric(keyvals) )
   
-  } else if ( identical(length(names(values)), length(set)) ) {
-    
-    if ( ! (all(names(values) %in% names(set))) ) {
-      stop("All names of 'values' must be in 'set'.")
-    }
-    
-    # Rearrange this in "set" order
-    v <- values[names(set)]
-    
-    # Of course this gets messy if there are duplicate names...
-  }
+  # Test that all keys are in the set
+  #
+  # This tests that all keys are present, and that there are no duplicates:
+  idx <- match(names(keyvals), names(set)) 
+  stopifnot( (identical(sort(idx), seq_along(set)) ) )
   
-  else {
-    stop("'values' must either be missing, NULL, or a named vector with names from 'set'.")
-  }
+  # Rearrange this in "set" order
+  v <- keyvals[names(set)]
   
 	# This just creates a vector of values indexed by set element key.
 	# Making this into a class and attaching the set as an attribute allows
@@ -310,17 +212,17 @@ new_param <- function(set, values) {
 		# Check that it's really a key
 		stopifnot( all(i %in% names(x)) )
 
-		# Get the parameter value
-	  # x needs to be unclassed to prevent infinite recursion...
-		value <- NextMethod()
-
+		# Get the parameter values
+    value <- NextMethod()
+    
 	} else if (is.integer(i)) {
 		# This is a vector of set variable indices
 		set <- attr(x, "set")
 		
-		# Need to keep this as i for NextMethod...
-		i <- get_keys(i, set)
-
+		# Find the keys corresponding to these set values
+		idx <- match(i, set)
+		i <- names(set[idx])
+		
 		value <- NextMethod()
 
 	} else {
