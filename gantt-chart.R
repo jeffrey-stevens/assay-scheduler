@@ -47,7 +47,7 @@ gantt_chart <- function(timings, by = "plate", title = "Assay schedule Gantt cha
     
   } else if ( identical(by, "resource") ) {
     
-    breaks <- sort(unique(as.integer(timings$Resource)))
+    breaks <- seq_along(levels(timings$Resource))
     labels <- levels(timings$Resource)
     gridlines <- c(0.5, breaks + 0.5)
     

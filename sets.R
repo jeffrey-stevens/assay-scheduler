@@ -234,30 +234,30 @@ new_param <- function(keyvals, set) {
 }
 
 
-`[<-.param` <- function(x, i, value) {
-  
-  stopifnot( identical(length(i), length(value)))
-  
-  if (is.character(i)) {
-		# Check that it's really a key
-		stopifnot( all(i %in% names(x)) )
-    
-    # Set the parameter value
-    value <- NextMethod()
-    
-  } else if (is.integer(i)) {
-		# This is a vector of set variable indices
-		set <- attr(x, "set")
-		
-		# Need to keep this as i for NextMethod...
-		i <- get_keys(i, set)
-
-		value <- NextMethod()
-
-	} else {
-		# Invalid input
-		stop("Invalid indexing type.")
-	}
-
-	return(value)
-}
+# `[<-.param` <- function(x, i, value) {
+#   
+#   stopifnot( identical(length(i), length(value)))
+#   
+#   if (is.character(i)) {
+# 		# Check that it's really a key
+# 		stopifnot( all(i %in% names(x)) )
+#     
+#     # Set the parameter value
+#     value <- NextMethod()
+#     
+#   } else if (is.integer(i)) {
+# 		# This is a vector of set variable indices
+# 		set <- attr(x, "set")
+# 		
+# 		# Need to keep this as i for NextMethod...
+# 		i <- get_keys(i, set)
+# 
+# 		value <- NextMethod()
+# 
+# 	} else {
+# 		# Invalid input
+# 		stop("Invalid indexing type.")
+# 	}
+# 
+# 	return(value)
+# }

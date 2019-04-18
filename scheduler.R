@@ -128,9 +128,16 @@ DEFAULTS <- list(
   
   ## Bounds on the incubation time for secondary detector incubation
   secondary_inc_min = 60 * 10,
-  secondary_inc_max = 60 * 35
+  secondary_inc_max = 60 * 35,
   
   ## Enhancement buffer doesn't require any incubation
+  
+  ## The maximum time a plate can be "exposed" after washing
+  wash_exposure_max = 2 * 60,
+  
+  ## The maximum time beads can sit in enhancement buffer before being read
+  enhancer_exposure_max = 10 * 60
+  
 )
 
 
@@ -140,6 +147,7 @@ DEFAULTS <- list(
 
 build_model <- function(num_plates = 1L, num_readers = 1L,
                         regular = TRUE, params = DEFAULTS) {
+  # regular :  Run the plates at regular intervals?
   
   # ----- Setup -----
   PLATES <- seq_len(num_plates)
@@ -210,16 +218,17 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
   
   # Explicitly map the sequence of steps
   
-  prior_steps <- new_subset( c( "AddBeads",
-                                "WashBeads",
-                                "AddSample",
-                                "WashSample",
-                                "AddPrimary",
-                                "WashPrimary",
-                                "AddSecondary",
-                                "WashSecondary",
-                                "AddEnhancer"),
-                             PROCESSING_STEPS )
+  pre_steps <- new_subset( c( "AddBeads",
+                              "WashBeads",
+                              "AddSample",
+                              "WashSample",
+                              "AddPrimary",
+                              "WashPrimary",
+                              "AddSecondary",
+                              "WashSecondary",
+                              "AddEnhancer"),
+                           PROCESSING_STEPS )
+  
   post_steps <- new_subset( c(  "WashBeads",
                                 "AddSample",
                                 "WashSample",
@@ -231,7 +240,7 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                                 "Read"),
                             PROCESSING_STEPS )
   
-  next_step <- map_sets(prior_steps,
+  next_step <- map_sets(pre_steps,
                         post_steps,
                         c( "AddBeads" = "WashBeads",
                            "WashBeads" = "AddSample",
@@ -248,8 +257,8 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
     ## Order the processing steps
     add_constraint( end_time[plate, step1] <= begin_time[plate, step2],
                     plate = PLATES,
-                    step1 = PROCESSING_STEPS[-length(PROCESSING_STEPS)],
-                    step2 = PROCESSING_STEPS[-1],
+                    step1 = pre_steps,
+                    step2 = post_steps,
                     # ompr removes all attributes, so must use a vectorized version
                     step2 == next_step(step1) )
   
@@ -305,7 +314,43 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                     step = INCUBATION_STEPS) %>%
     add_constraint( inc_dur[step] <= inc_dur_max[step],
                     step = INCUBATION_STEPS)
+  
+  
+  # ----- Exposure constraints -----
 
+  exposure_steps <- new_subset( c("WashBeads",
+                                  "WashSample",
+                                  "WashPrimary",
+                                  "WashSecondary",
+                                  "AddEnhancer"),
+                                PROCESSING_STEPS )
+  
+  post_exposure_steps <- new_subset( c("AddSample",
+                                       "AddPrimary",
+                                       "AddSecondary",
+                                       "AddEnhancer",
+                                       "Read"),
+                                     PROCESSING_STEPS)
+  
+  exposure_bounds <- map_sets(exposure_steps, post_exposure_steps,
+                           setNames( names(post_exposure_steps), names(exposure_steps) ) )
+  
+  exposures <- new_param( c("WashBeads" = params$wash_exposure_max,
+                            "WashSample" = params$wash_exposure_max,
+                            "WashPrimary" = params$wash_exposure_max,
+                            "WashSecondary" = params$wash_exposure_max,
+                            "AddEnhancer" = params$enhancer_exposure_max),
+                          exposure_steps )
+  
+  model <-
+    model %>%
+    add_constraint( begin_time[plate, step2] - end_time[plate, step1] <= exposures[step1],
+                    plate = PLATES,
+                    step1 = exposure_steps,
+                    step2 = post_exposure_steps,
+                    # ompr removes all attributes, so must use a vectorized version
+                    step2 == exposure_bounds(step1) )
+  
 
   # ----- Resource conflict constraints -----
 

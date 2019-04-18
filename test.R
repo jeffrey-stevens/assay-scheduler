@@ -70,7 +70,8 @@ test_model <- function(nplates = 1L, by = "plate") {
   
   timings <-
     sol$StepTimes %>%
-    mutate( Resource = names(res_map(as.character(Step))) ) %>%
+    mutate( Resource = factor( names(res_map(as.character(Step))),
+                               levels = names(resources) ) ) %>%
     filter( Resource != "Incubation") %>%
     rename(Start = StartTime, Stop = EndTime)
   

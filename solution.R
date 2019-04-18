@@ -141,7 +141,9 @@ extract_solution <- function(model, solution, vars_list = NULL) {
         # Only replace for symbolic sets; no need to replace integer indices
         if ( identical(class(set), "set") ) {
           # Cast this as an ordered factor for easy sorting
-          sol[[sn]] <- factor(get_keys(sol[[sn]], set), levels = names(sort(set)))
+          keys <- names(elements(sol[[sn]], set))
+          sol[[sn]] <- factor(keys, levels = names(sort(set)))
+
         }
       }
     }
