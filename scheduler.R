@@ -407,13 +407,6 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
   
   # ----- Assay and run definitions -----
   
-  # Order the assays by plate number:
-  model <-
-    model %>%
-    add_constraint( assay_begin[plate1] <= assay_begin[plate2],
-                    plate1 = PLATES, plate2 = PLATES,
-                    plate1 < plate2 )
-  
   # An assay begins with the beginning of bead suspension transfer step, and
   # ends with the end of the read (note that plate transport steps are being
   # ignored for now...)
@@ -426,6 +419,28 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
                     plate = PLATES, step = STEPS["Read"]) %>%
     add_constraint( assay_dur[plate] == assay_end[plate] - assay_begin[plate],
                     plate = PLATES)
+  
+  
+  # Assay ordering constraints
+  
+  if (regular) {
+    # Stagger assays at regular intervals
+    
+    model <- 
+      model %>%
+      add_variable(assay_interval, type = "continuous", lb = 0) %>%
+      add_constraint(assay_begin[plate] == (plate - 1) * assay_interval,
+                     plate = PLATES)
+  } else {
+    # Order the assays by plate number
+    
+    model <-
+      model %>%
+      add_constraint( assay_begin[plate1] <= assay_begin[plate2],
+                      plate1 = PLATES, plate2 = PLATES,
+                      plate1 < plate2 )
+  }
+  
   
   # A run ends when all the assays have completed
   
@@ -453,7 +468,7 @@ solve_schedule <- function(model) {
 }
 
 
-repackage_solution <- function(model, solution, nplates = 1L) {
+repackage_solution <- function(model, solution, nplates = 1L, regular = TRUE) {
   
   PLATES <- seq_len(nplates)
   
@@ -467,6 +482,10 @@ repackage_solution <- function(model, solution, nplates = 1L) {
                      assay_dur = sets(Plate = PLATES),
                      begin_time = sets(Plate = PLATES, Step = STEPS),
                      end_time = sets(Plate = PLATES, Step = STEPS) )
+  
+  if (regular) {
+    vars_list <- c(vars_list, vars(assay_interval = NULL))
+  }
   
   sols <- extract_solution(model, solution, vars_list)
   
@@ -496,8 +515,14 @@ repackage_solution <- function(model, solution, nplates = 1L) {
     select(Plate, Step, StartTime, EndTime, Duration) %>%
     arrange(Plate, Step)
   
-  return( list(RunDuration = unname(sols$run_end), 
-               IncubationDurations = inc_dur,
-               AssayTimes = assay_times,
-               StepTimes = step_times) )
+  result <- list(RunDuration = unname(sols$run_end),
+                 IncubationDurations = inc_dur,
+                 AssayTimes = assay_times,
+                 StepTimes = step_times) 
+  
+  if (regular) {
+    result <- c(result, list(AssayInterval = unname(sols$assay_interval)))
+  }
+  
+  return( result )
 }

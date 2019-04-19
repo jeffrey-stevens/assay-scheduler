@@ -4,7 +4,7 @@ source("gantt-chart.R")
 
 test_model <- function(nplates = 1L, by = "plate") {
   
-  model <- build_model(num_plates = nplates)
+  model <- build_model(num_plates = nplates, regular = TRUE)
   solution <- solve_schedule(model)
   sol <- repackage_solution(model, solution, nplates)
   
@@ -76,4 +76,6 @@ test_model <- function(nplates = 1L, by = "plate") {
     rename(Start = StartTime, Stop = EndTime)
   
   gantt_chart(timings, by = by)
+  
+  return(sol)
 }
