@@ -75,7 +75,7 @@ test_model <- function(nplates = 1L, by = "plate") {
     filter( Resource != "Incubation") %>%
     rename(Start = StartTime, Stop = EndTime)
   
-  gantt_chart(timings, by = by)
+  show(gantt_chart(timings, by = by))
   
   return(sol)
 }

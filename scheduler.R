@@ -145,9 +145,11 @@ DEFAULTS <- list(
 # Scheduler ---------------------------------------------------------------
 
 
-build_model <- function(num_plates = 1L, num_readers = 1L,
-                        regular = TRUE, params = DEFAULTS) {
-  # regular :  Run the plates at regular intervals?
+build_model <- function( num_plates = 1L, num_readers = 1L,
+                         regular = TRUE, consistent = TRUE,
+                         params = DEFAULTS ) {
+  # regular:  Run the plates at regular intervals?
+  # consistent: Require that all plates be run the same?
   
   # ----- Setup -----
   PLATES <- seq_len(num_plates)
@@ -439,6 +441,39 @@ build_model <- function(num_plates = 1L, num_readers = 1L,
       add_constraint( assay_begin[plate1] <= assay_begin[plate2],
                       plate1 = PLATES, plate2 = PLATES,
                       plate1 < plate2 )
+  }
+  
+  
+  # Assay consistency constraint
+  #
+  # Without a constraint on assay timing, the solver may find
+  # inconsistent---though valid---assay schedules.  For example, with the
+  # regularity constraint and no other constraints on the assay, the solver may
+  # "cheat" by pipetting the beads early and letting them sit for long periods
+  # in the plate.  This is technically valid, but not really what was intended.
+  #
+  # In practice, it's desirable for all the assays to be run the same way.  This
+  # consistency condition makes it a lot easier to validate the protocol, time
+  # your workflow, and scale the throughput.  It also makes it easier for the
+  # operator to know what stage of the process the assays are in in the event of
+  # an error.
+  
+  if (consistent) {
+  
+    # Require that each step start at the same time relative to the start of the assay.
+    #
+    # This is less efficient than just removing the "plate" parameter from the
+    # step begin and end times, but that would require rewriting most of the
+    # above steps, not to mention the solution parsing routine...
+    
+    if (num_plates > 1L) {
+      model <-
+        model %>%
+        add_constraint( begin_time[plate1, step] - assay_begin[plate1] == 
+                          begin_time[plate2, step] - assay_begin[plate2],
+                        plate1 = PLATES, plate2 = PLATES, step = STEPS,
+                        plate1 < plate2)
+    }
   }
   
   
